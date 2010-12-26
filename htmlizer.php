@@ -4,7 +4,6 @@ class Htmlizer {
 	
 	protected $filters = array(
 		array('code_blocks', 'before_filter'),
-		
 		'header',
 		'bold',
 		
@@ -15,6 +14,9 @@ class Htmlizer {
 		$return = $plain_text;
 		foreach ($this->filters as $filter) {
 			$callback = Htmlizer_Filter::factory($filter);
+			if (!is_callable($callback)) {
+				throw new Exception("Invalid callback");
+			}
 			$return = call_user_func($callback, $return);
 		}
 		return $return;
@@ -22,7 +24,15 @@ class Htmlizer {
 }
 abstract class Htmlizer_Filter {
 	static $classes = array();
-	abstract function process($plain_text);
+	
+	protected $start_token, 
+			  $end_token, 
+			  $replaced_start, 
+			  $replaced_end;
+	
+	# particular elements like headings should be the only text on the line
+	protected $whole_line_only = false;
+	protected $block_element = false;
 	
 	static function factory($filter) {
 		$method = 'process';
@@ -37,7 +47,7 @@ abstract class Htmlizer_Filter {
 		}
 		
 		if (isset(self::$classes[$filter])) {
-			return array(self::$classes[$filter], )
+			return array(self::$classes[$filter], $method);
 		}
 		
 		$filter_class = str_replace(' ', '', ucwords(str_replace('_', ' ', $filter)));
@@ -53,47 +63,32 @@ abstract class Htmlizer_Filter {
 		
 		return array($filter_object, $method);
 	}
-}
-class Htmlizer_Filter_Exception extends Exception {}
-
-class Htmlizer_Filter_CodeBlocks extends Htmlizer_Filter {
-	
-	function before_filter() {
-		
-	}
-	function process($plain_text) {
-		
-	}
-}
-
-class Htmlizer_Filter_Inline extends Htmlizer_Filter {
-	protected $token = '', $replaced_start, $replaced_end;
-	# particular elements like headings should be the only text on the line
-	protected $whole_line_only = false;
 	
 	function build_regex() {
-		$token = preg_quote($this->token);
+		$start_token = preg_quote($this->start_token);
+		$end_token = preg_quote($this->end_token);
 		
+		$is_greedy = true;
+		if ($this->whole_line_only) {
+			$is_greedy = false;
+		}
 		$flags = array();
 		
-		if (empty($token)) {
+		if (empty($start_token)) {
 			$error = "Cannot determinate token for " . get_class($this) . " inline filter. ";
 			throw new Htmlizer_Filter_Exception($error);
 		}
 		
-		if (strlen($token)==1) {
-			# "x([^x]*)x" is faster than "x(.*?)x" but it's working only for
-			# one-char x
-			$regex_core = $token . '[^' . $token . ']*' . $token;
-		} else {
-			$regex_core = $token . '(.*?)' . $token;
-		}
+		$regex_core = $start_token . '(.+' . ($is_greedy ? '?' : '') . ')' . $end_token;
+		
 		$regex_separator = '~';
 		
 		if ($this->whole_line_only) {
 			# allow whitespace
 			$regex_core = "^\s*$regex_core\s*$"; 
 			$flags[] = "m"; # multi line so start of line and end of line works correctly
+		} elseif ($this->block_element) {
+			$flags[] = "s"; # dot all 
 		}
 		
 		# escape the regex separator in the regex core -- that wat "~" token won't fail
@@ -112,15 +107,48 @@ class Htmlizer_Filter_Inline extends Htmlizer_Filter {
 		);
 		return $replaced;
 	}
+	
+	
+}
+class Htmlizer_Filter_Exception extends Exception {}
+
+class Htmlizer_Filter_CodeBlocks extends Htmlizer_Filter {
+	public $start_token = '{{{', $end_token = '}}}',
+		   $replaced_start = '<div class="code">', $replaced_end = '</div>';
+	
+	protected $block_element=true;
+	
+	public $code_blocks_references = array();
+	function initial_replace_callback($matches) {
+		$code = $matches[1];
+		$code_block_id = md5(mt_rand() . $code);
+		
+		$this->code_blocks_references[$code_block_id] = $code;
+		return $code_block_id;
+	}
+	function before_filter($plain_text) {
+		$this->build_regex();
+		return preg_replace_callback($this->regex, array($this, 'initial_replace_callback'), $plain_text);
+	}
+	function process($plain_text) {
+		foreach ($this->code_blocks_references as $code_block_id=>$code) {
+			$plain_text = str_replace($code_block_id, '<div class="code">' . $code . '</div>', $plain_text);
+		} 
+		return $plain_text;
+	}
+}
+
+class Htmlizer_Filter_Inline extends Htmlizer_Filter {
+	
 }
 class Htmlizer_Filter_Bold extends Htmlizer_Filter_Inline {
-	protected $token = '*', 
+	protected $start_token = '*', $end_token = '*', 
 			  $replaced_start = '<strong>', 
 			  $replaced_end = '</strong>';
 }
 
 class Htmlizer_Filter_Header extends Htmlizer_Filter_Inline {
-	protected $token = '=', 
+	protected $start_token = '=', $end_token = '=', 
 			  $replaced_start = '<h2>', 
 			  $replaced_end = '</h2>';
 	

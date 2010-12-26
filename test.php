@@ -6,11 +6,18 @@ class htmlizer_tester {
 	
 	public $error_log = array();
 	
+	function normalize_new_lines($in) {
+		$return = str_replace("\r", "\n", $in);
+		$return = preg_replace('~\n~', $in);
+	}
+	
 	function test($test_name, $plain_text, $expected_htmlized) {
 		$this->tests_total++;
 		
 		$htmlizer = new Htmlizer();
 		$actual_output = $htmlizer->htmlize($plain_text);
+		$actual_output = ;
+		
 		if ($actual_output==$expected_htmlized) {
 			return true;
 		}
@@ -41,7 +48,14 @@ $tester->test("Regular Star", "*bold* starred item*", "<strong>bold</strong> sta
 /* header */
 $tester->test("Header", "=head=", "<h2>head</h2>");
 $tester->test("Header Inline", "test =head= test", "test =head= test");
+$tester->test("Code", "test {{{test!}}}", 'test <div class="code">test!</div>');
 
+$tester->test("Code", "test
+{{{test!}}}
+	
+", 'test
+<div class="code">test!</div>
+');
 
 echo $tester->get_results();
 // echo $tester
