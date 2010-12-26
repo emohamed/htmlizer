@@ -6,6 +6,9 @@ class Htmlizer {
 		array('code_blocks', 'before_filter'),
 		'header',
 		'bold',
+		'super_script',
+		'sub_script',
+		'auto_p',
 		
 		'code_blocks'
 	);
@@ -112,6 +115,68 @@ abstract class Htmlizer_Filter {
 }
 class Htmlizer_Filter_Exception extends Exception {}
 
+class Htmlizer_Filter_AutoP extends Htmlizer_Filter {
+	/**
+	 * Accepts matches array from preg_replace_callback in wpautop() or a string.
+	 *
+	 * Ensures that the contents of a <<pre>>...<</pre>> HTML block are not
+	 * converted into paragraphs or line-breaks.
+	 *
+	 * @param array|string $matches The array or string
+	 * @return string The pre block without paragraph/line-break conversion.
+	 */
+	function clean_pre($matches) {
+		if ( is_array($matches) )
+			$text = $matches[1] . $matches[2] . "</pre>";
+		else
+			$text = $matches;
+	
+		$text = str_replace('<br />', '', $text);
+		$text = str_replace('<p>', "\n", $text);
+		$text = str_replace('</p>', '', $text);
+	
+		return $text;
+	}
+	// Borrowed from WordPress
+	function process($pee) {
+		if ( trim($pee) === '' )
+			return '';
+		$pee = $pee . "\n"; // just to make things a little easier, pad the end
+		$pee = preg_replace('|<br />\s*<br />|', "\n\n", $pee);
+		// Space things out a little
+		$allblocks = '(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|option|form|map|area|blockquote|address|math|style|input|p|h[1-6]|hr|fieldset|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)';
+		$pee = preg_replace('!(<' . $allblocks . '[^>]*>)!', "\n$1", $pee);
+		$pee = preg_replace('!(</' . $allblocks . '>)!', "$1\n\n", $pee);
+		$pee = str_replace(array("\r\n", "\r"), "\n", $pee); // cross-platform newlines
+		if ( strpos($pee, '<object') !== false ) {
+			$pee = preg_replace('|\s*<param([^>]*)>\s*|', "<param$1>", $pee); // no pee inside object/embed
+			$pee = preg_replace('|\s*</embed>\s*|', '</embed>', $pee);
+		}
+		$pee = preg_replace("/\n\n+/", "\n\n", $pee); // take care of duplicates
+		// make paragraphs, including one at the end
+		$pees = preg_split('/\n\s*\n/', $pee, -1, PREG_SPLIT_NO_EMPTY);
+		$pee = '';
+		foreach ( $pees as $tinkle )
+			$pee .= '<p>' . trim($tinkle, "\n") . "</p>\n";
+		$pee = preg_replace('|<p>\s*</p>|', '', $pee); // under certain strange conditions it could create a P of entirely whitespace
+		$pee = preg_replace('!<p>([^<]+)</(div|address|form)>!', "<p>$1</p></$2>", $pee);
+		$pee = preg_replace('!<p>\s*(</?' . $allblocks . '[^>]*>)\s*</p>!', "$1", $pee); // don't pee all over a tag
+		$pee = preg_replace("|<p>(<li.+?)</p>|", "$1", $pee); // problem with nested lists
+		$pee = preg_replace('|<p><blockquote([^>]*)>|i', "<blockquote$1><p>", $pee);
+		$pee = str_replace('</blockquote></p>', '</p></blockquote>', $pee);
+		$pee = preg_replace('!<p>\s*(</?' . $allblocks . '[^>]*>)!', "$1", $pee);
+		$pee = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*</p>!', "$1", $pee);
+		$pee = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*<br />!', "$1", $pee);
+		$pee = preg_replace('!<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)!', '$1', $pee);
+		if (strpos($pee, '<pre') !== false)
+			$pee = preg_replace_callback('!(<pre[^>]*>)(.*?)</pre>!is', 'clean_pre', $pee );
+		$pee = preg_replace( "|\n</p>$|", '</p>', $pee );
+		$pee = preg_replace( "|\s+$|", '', $pee );
+	
+		return $pee;
+	}
+}
+
 class Htmlizer_Filter_CodeBlocks extends Htmlizer_Filter {
 	public $start_token = '{{{', $end_token = '}}}',
 		   $replaced_start = '<div class="code">', $replaced_end = '</div>';
@@ -155,6 +220,17 @@ class Htmlizer_Filter_Header extends Htmlizer_Filter_Inline {
     protected $whole_line_only = true;
 }
 
+class Htmlizer_Filter_SuperScript extends Htmlizer_Filter_Inline{
+	protected $start_token = '^', $end_token = '^', 
+			  $replaced_start = '<sup>', 
+			  $replaced_end = '</sup>';
+}
+class Htmlizer_Filter_SubScript extends Htmlizer_Filter_Inline{
+	protected $start_token = '~', $end_token = '~', 
+			  $replaced_start = '<sub>', 
+			  $replaced_end = '</sub>';
+}
+
 /*
 function linker($matches) {
 	$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
@@ -177,7 +253,6 @@ function bolder($matches) {
 	return '<strong>' . $matches[1] . '</strong>';
 }
 
-
 function italicer($matches) {
 	if (isset($matches[1])) {
 		return '<em>' . $matches[1] . '</em>';
@@ -188,32 +263,6 @@ function do_quotes($match) {
 }
 function do_horizontal_lines($match) {
     return "\n" . '<div class="hr">&nbsp;</div>' . "\n";
-}
-function do_smilies($htmlized) {
-	$smilies_icons = array(
-		':-(' => 'sad',
-		':-(' => 'sad',
-		':-)' => 'smile',
-		':-?' => 'confused',
-		':-D' => 'biggrin',
-		':-P' => 'razz',
-		':-o' => 'surprised',
-		':-x' => 'mad',
-		':-|' => 'neutral',
-		';-)' => 'wink',
-		':('  => 'sad',
-		':)'  => 'smile',
-		':?'  => 'confused',
-		':D'  => 'biggrin',
-		':P'  => 'razz',
-		':o'  => 'surprised',
-		':x'  => 'mad',
-		':|'  => 'neutral',
-	);
-	foreach ($smilies_icons as $emoticon => $image) {
-		$htmlized = str_replace($emoticon, '<img src="/css/img/smilies/icon_'. $image . '.gif" alt="' . $emoticon . '" />', $htmlized);
-	}
-	return $htmlized;
 }
 
 class HTMLIze_code_blocks_fixer {
@@ -274,92 +323,6 @@ function do_ordered_lists($matches) {
 function do_headings($matches) {
     return "<h3>" . trim($matches[1]) . "</h3>";
 }
-// alternative to nl2br -- taken from WordPress
-function auto_p($html, $br = 1) {
-	if ( trim($html) === '' )
-		return '';
-	$html = $html . "\n"; // just to make things a little easier, pad the end
-	$html = preg_replace('|<br />\s*<br />|', "\n\n", $html);
-	// Space things out a little
-	$allblocks = '(?:table|thead|tfoot|caption|col|colgroup|tbody|tr|td|th|div|dl|dd|dt|ul|ol|li|pre|select|option|form|map|area|blockquote|address|math|style|input|p|h[1-6]|hr|fieldset|legend|section|article|aside|hgroup|header|footer|nav|figure|figcaption|details|menu|summary)';
-	$html = preg_replace('!(<' . $allblocks . '[^>]*>)!', "\n$1", $html);
-	$html = preg_replace('!(</' . $allblocks . '>)!', "$1\n\n", $html);
-	$html = str_replace(array("\r\n", "\r"), "\n", $html); // cross-platform newlines
-	if ( strpos($html, '<object') !== false ) {
-		$html = preg_replace('|\s*<param([^>]*)>\s*|', "<param$1>", $html); // no pee inside object/embed
-		$html = preg_replace('|\s*</embed>\s*|', '</embed>', $html);
-	}
-	$html = preg_replace("/\n\n+/", "\n\n", $html); // take care of duplicates
-	// make paragraphs, including one at the end
-	$htmls = preg_split('/\n\s*\n/', $html, -1, PREG_SPLIT_NO_EMPTY);
-	$html = '';
-	foreach ( $htmls as $tinkle )
-		$html .= '<p>' . trim($tinkle, "\n") . "</p>\n";
-	$html = preg_replace('|<p>\s*</p>|', '', $html); // under certain strange conditions it could create a P of entirely whitespace
-	$html = preg_replace('!<p>([^<]+)</(div|address|form)>!', "<p>$1</p></$2>", $html);
-	$html = preg_replace('!<p>\s*(</?' . $allblocks . '[^>]*>)\s*</p>!', "$1", $html); // don't pee all over a tag
-	$html = preg_replace("|<p>(<li.+?)</p>|", "$1", $html); // problem with nested lists
-	$html = preg_replace('|<p><blockquote([^>]*)>|i', "<blockquote$1><p>", $html);
-	$html = str_replace('</blockquote></p>', '</p></blockquote>', $html);
-	$html = preg_replace('!<p>\s*(</?' . $allblocks . '[^>]*>)!', "$1", $html);
-	$html = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*</p>!', "$1", $html);
-	if ($br) {
-		$html = preg_replace_callback('/<(script|style).*?<\/\\1>/s', create_function('$matches', 'return str_replace("\n", "<WPPreserveNewline />", $matches[0]);'), $html);
-		$html = preg_replace('|(?<!<br />)\s*\n|', "<br />\n", $html); // optionally make line breaks
-		$html = str_replace('<WPPreserveNewline />', "\n", $html);
-	}
-	$html = preg_replace('!(</?' . $allblocks . '[^>]*>)\s*<br />!', "$1", $html);
-	$html = preg_replace('!<br />(\s*</?(?:p|li|div|dl|dd|dt|th|pre|td|ul|ol)[^>]*>)!', '$1', $html);
-	if (strpos($html, '<pre') !== false)
-		$html = preg_replace_callback('!(<pre[^>]*>)(.*?)</pre>!is', 'clean_pre', $html );
-	$html = preg_replace( "|\n</p>$|", '</p>', $html );
 
-	return $html;
-}
-function htmlize($plain_text) {
-	
-	// return "<pre>$plain_text</pre>";
-	$html_checklist_html = '<p class="checklist"><strong>HTML Checklist:</strong><br /> https://trac.2c-studio.com/wiki/html-checklist </p>';
-	$ssi_html_checklist_html = '<p class="checklist"><strong>WordPress</strong> HTML Checklist<br /> https://trac.2c-studio.com/wiki/WordPress/HTMLGuide </p>';
-	$wp_checklist_html = '<p class="checklist"><strong>WP Checklist:</strong><br /> https://trac.2c-studio.com/wiki/wordpress-pre-commit-checks </p>';
-	
-	$code_blocks_fixer = new HTMLIze_code_blocks_fixer();
-	
-	$plain_text = $code_blocks_fixer->step1($plain_text);
-	
-	$htmlized = str_replace('[html-checklist]', $html_checklist_html, $plain_text);
-	$htmlized = str_replace('[ssi-html-checklist]', $ssi_html_checklist_html, $htmlized);
-	$htmlized = str_replace('[wp-checklist]', $wp_checklist_html, $htmlized);
-	
-	$htmlized = preg_replace_callback('~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~', 'linker', $htmlized);
-	
-	// $htmlized = preg_replace_callback('~^\s*([A-Z0-9]+)\s*$~m', 'do_headings', $htmlized);
-
-	
-
-	$htmlized = preg_replace_callback('~\*+(.+?)\*+~', 'bolder', $htmlized);
-	$htmlized = preg_replace_callback('~([A-Z]+:)~', 'bolder', $htmlized);
-
-	$htmlized = preg_replace_callback('~^\s*=(.+)=\s*$~m', 'do_headings', $htmlized);
-	
-	$htmlized = preg_replace_callback('~^((&gt;|>){2}.+$\s*)~m', 'do_quotes', $htmlized);
-	
-	$htmlized = preg_replace_callback('~\s*^-{3,}\s*~m', 'do_horizontal_lines', $htmlized);
-	
-	$htmlized = preg_replace_callback('~\s*^\s*[\-\*â€¢Â·â€¢] ?(.*?)$~um', 'do_list_elements', $htmlized);
-	$htmlized = preg_replace_callback('~(<li>.*?</li>\s*)+~', 'do_unordered_lists', $htmlized);
-	
-	$htmlized = preg_replace_callback('~^\s*#\s*?(.*?)$~um', 'do_ol_list_elements', $htmlized);
-	$htmlized = preg_replace_callback('~(<oli>.*?</oli>\s*)+~', 'do_ordered_lists', $htmlized);
-	
-
-	$htmlized = do_smilies($htmlized);
-	
-	$htmlized = auto_p($htmlized);
-	
-	$htmlized = $code_blocks_fixer->step2($htmlized);
-	
-	return $htmlized;
-}
 */
 ?>
