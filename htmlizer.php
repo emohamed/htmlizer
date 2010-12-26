@@ -14,6 +14,7 @@ class Htmlizer {
 		'sub_script',
 		'link',
 		'auto_p',
+		'list',
 		
 		'code_blocks',
 		'inline_code',
@@ -225,7 +226,19 @@ class Htmlizer_Filter_InlineCode extends Htmlizer_Filter_CodeBlocks {
 class Htmlizer_Filter_Inline extends Htmlizer_Filter {
 	
 }
-
+class Htmlizer_Filter_List extends Htmlizer_Filter {
+	function replace_callback($matches) {
+		print_r($matches);
+		exit;
+	}
+	function process($plain_text) {
+		return preg_replace_callback(
+			'~(^\s*\*(.*))+~m', 
+			array($this, 'replace_callback'),
+			$plain_text
+		);
+	}
+}
 class Htmlizer_Filter_Link extends Htmlizer_Filter {
 	function replace_callback($matches) {
 		$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
