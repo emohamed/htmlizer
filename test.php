@@ -22,7 +22,8 @@ class htmlizer_tester {
 		
 		$htmlizer = new Htmlizer();
 		$actual_output = $htmlizer->htmlize($plain_text);
-		$dom = DomDocument::loadXml($actual_output);
+		# hack it so the XML parser doesn't complain about missing root element
+		$dom = DomDocument::loadXml("<_root>" . $actual_output . "</_root>");
 		if (!$dom) {
 			$this->tests_failed++;
 			$this->error($test_name, $plain_text, $expected_htmlized, $actual_output, "bad HTML");
@@ -50,6 +51,13 @@ class htmlizer_tester {
 	}
 }
 $tester = new htmlizer_tester();
+
+$tester->should_match(
+	"HTML escape functionality", 
+	"test <script src=\"http://evil.coom/\"></script> test", 
+	"<p>test &lt;script src=\"<a href=\"http://evil.coom/\" target=\"_blank\">http://evil.coom/</a>\"&gt;&lt;/script&gt; test</p>"
+);
+
 /* bold ... */
 $tester->should_match("Bolder", "test *test 1* test", "<p>test <strong>test 1</strong> test</p>");
 $tester->should_match("Double Bolder", "test *test 1* test *test 2*", "<p>test <strong>test 1</strong> test <strong>test 2</strong></p>");
@@ -70,9 +78,50 @@ $tester->should_match("AutoP test 2", "test2 \n test2", "<p>test2 \n test2</p>")
 $tester->should_match("Super Script", "test ^test^ test", "<p>test <sup>test</sup> test</p>");
 $tester->should_match("Sub Script", "test ~test~ test", "<p>test <sub>test</sub> test</p>");
 
+$tester->should_match("Code block", "test {{{test!}}}", '<p>test <div class="code">test!</div></p>');
+$tester->should_match("Code inline", "test `test!`", '<p>test <code>test!</code></p>');
+$tester->should_match("Markup in code block", "test {{{*test!*}}}", '<p>test <div class="code">*test!*</div></p>');
+$tester->should_match("Markup in inline code", "test `*test!*`", '<p>test <code>*test!*</code></p>');
+$tester->should_match("Actual  markup in block code", 
+	"test {{{<script src=\"http://evil.cooom/\"></script>}}}", 
+	"<p>test <div class=\"code\">&lt;script src=\"http://evil.cooom/\"&gt;&lt;/script&gt;</div></p>"
+);
+
+/* links ...  */
+$tester->should_match("Basic link", 
+	"test http://google.com", 
+	"<p>test <a href=\"http://google.com\" target=\"_blank\">http://google.com</a></p>"
+);
+$tester->should_match("Basic link", 
+	"test http://google.com", 
+	"<p>test <a href=\"http://google.com\" target=\"_blank\">http://google.com</a></p>"
+);
+$tester->should_match("Link with dot at the end", 
+	"test http://google.com/wave/.", 
+	"<p>test <a href=\"http://google.com/wave/\" target=\"_blank\">http://google.com/wave/</a>.</p>"
+);
+$tester->should_match("Link with question mark at the end", 
+	"test http://google.com/wave/?", 
+	"<p>test <a href=\"http://google.com/wave/?\" target=\"_blank\">http://google.com/wave/?</a></p>"
+);
+$tester->should_match("Link with braces around", 
+	"test (http://google.com/wave/)", 
+	"<p>test (<a href=\"http://google.com/wave/\" target=\"_blank\">http://google.com/wave/</a>)</p>"
+);
+$tester->should_match("Link with braces in", 
+	"Bison rocks http://en.wikipedia.org/wiki/Bison_(comics)", 
+	"<p>Bison rocks <a href=\"http://en.wikipedia.org/wiki/Bison_(comics)\" target=\"_blank\">http://en.wikipedia.org/wiki/Bison_(comics)</a></p>"
+);
+
+# lists
+$tester->should_match("Link with braces in", 
+	"test test\n * test1\n * test2\n * test3", 
+	"<p>test <ul><li>test</li></li>test1</li><li>test2</li><li>test3</li></ul></p>"
+);
 
 
-// $tester->test("Code", "test {{{test!}}}", '<p>test <div class="code">test!</div></p>');
+// $tester->should_match("Sub Script", "test ~test~ test", "<p>test <sub>test</sub> test</p>");
+
 
 // $tester->test("Code", "test {{{test!}}}", '<p>test <div class="code">test!</div></p>');
 

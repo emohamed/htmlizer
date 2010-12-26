@@ -1,16 +1,22 @@
-<?php
+<?phpENT_NOQUOTES;
 class Htmlizer {
 	public $plain_text, $result_html;
 	
 	protected $filters = array(
+		'html_special_chars',
+		
 		array('code_blocks', 'before_filter'),
+		array('inline_code', 'before_filter'),
+		
 		'header',
 		'bold',
 		'super_script',
 		'sub_script',
+		'link',
 		'auto_p',
 		
-		'code_blocks'
+		'code_blocks',
+		'inline_code',
 	);
 	
 	function htmlize($plain_text) {
@@ -110,11 +116,13 @@ abstract class Htmlizer_Filter {
 		);
 		return $replaced;
 	}
-	
-	
 }
 class Htmlizer_Filter_Exception extends Exception {}
-
+class Htmlizer_Filter_HtmlSpecialChars extends Htmlizer_Filter {
+	function process($filter) {
+		return htmlspecialchars($filter, ENT_NOQUOTES);
+	}
+}
 class Htmlizer_Filter_AutoP extends Htmlizer_Filter {
 	/**
 	 * Accepts matches array from preg_replace_callback in wpautop() or a string.
@@ -197,15 +205,56 @@ class Htmlizer_Filter_CodeBlocks extends Htmlizer_Filter {
 	}
 	function process($plain_text) {
 		foreach ($this->code_blocks_references as $code_block_id=>$code) {
-			$plain_text = str_replace($code_block_id, '<div class="code">' . $code . '</div>', $plain_text);
+			$plain_text = str_replace(
+				$code_block_id, 
+				$this->replaced_start . $code . $this->replaced_end, 
+				$plain_text
+			);
 		} 
 		return $plain_text;
 	}
 }
 
+class Htmlizer_Filter_InlineCode extends Htmlizer_Filter_CodeBlocks {
+	public $start_token = '`', $end_token = '`',
+		   $replaced_start = '<code>', $replaced_end = '</code>';
+	
+	protected $block_element=true;
+}
+
 class Htmlizer_Filter_Inline extends Htmlizer_Filter {
 	
 }
+
+class Htmlizer_Filter_Link extends Htmlizer_Filter {
+	function replace_callback($matches) {
+		$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
+		# handle links with parenthese properly
+		$rest = '';
+		if (strpos($link, ')')!==false && strpos($link, '(')===false) {
+			$rest = substr($link, strpos($link, ')'));
+			$link = substr($link, 0, strpos($link, ')'));
+		} else if (preg_match('~([\.",])$~', $link, $m)) {
+			# dots at the end of the string are really not part of the url(in most cases)
+			$link = substr($link, 0, -1);
+			$rest = $m[1];
+		}
+		$link_location = $link;
+		// $link_repr = preg_replace('~([%/\?=:])~', '$1<wbr></wbr>', $link);
+		$link_repr = $link;
+		$link_repr = wordwrap($link_repr, 120, '<wbr></wbr>', 1);
+		return '<a href="' . $link_location . '" target="_blank">' . $link_repr . '</a>' . $rest;
+	}
+	
+	function process($plain_text) {
+		return preg_replace_callback(
+			'~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~',
+			array($this, 'replace_callback'),
+			$plain_text
+		);
+	}
+}
+
 class Htmlizer_Filter_Bold extends Htmlizer_Filter_Inline {
 	protected $start_token = '*', $end_token = '*', 
 			  $replaced_start = '<strong>', 
@@ -249,15 +298,7 @@ function linker($matches) {
 	$link_repr = wordwrap($link_repr, 120, '<wbr></wbr>', 1);
 	return '<a href="' . $link_location . '" target="_blank">' . $link_repr . '</a>' . $rest;
 }
-function bolder($matches) {
-	return '<strong>' . $matches[1] . '</strong>';
-}
 
-function italicer($matches) {
-	if (isset($matches[1])) {
-		return '<em>' . $matches[1] . '</em>';
-	}
-}
 function do_quotes($match) {
     return "<em style='display: block; margin-top: 3px;'>$match[1]</em>";
 }
@@ -265,44 +306,7 @@ function do_horizontal_lines($match) {
     return "\n" . '<div class="hr">&nbsp;</div>' . "\n";
 }
 
-class HTMLIze_code_blocks_fixer {
-	public $tokens = array(
-		'inline'=>array(),
-		'block'=>array(),
-	);
-	
-	// Step 1 replaces all block codes with tokens that won't be processed by other formatting functions
-	function step1($plain_text) {
-		$htmlized = preg_replace_callback('~`(.+?)`~', array($this, 'step1_inline_code'), $plain_text);
-	    return preg_replace_callback('~\{\{\{(.+?)\}\}\}~s', array($this, 'step1_blocks_code'), $htmlized);
-	}
-	function memorize_code_fragment($code, $type) {
-	    $token = md5(mt_rand() . $code . microtime(true));
-		$this->tokens[$type][$token] = $code;
-		return $token;
-	}
-	
-	function step1_inline_code($matches) {
-		return $this->memorize_code_fragment($matches[1], 'inline');
-	}
-	
-	function step1_blocks_code($matches) {
-		return $this->memorize_code_fragment($matches[1], 'block');
-	}
-	
-	// adds the code block to it's place
-	function step2($htmlized) {
-		foreach ($this->tokens['block'] as $token=>$body) {
-			$body = '<div class="code"><pre class="prettyprint">' . trim($body) . '</pre></div>';
-			$htmlized = str_replace($token, $body, $htmlized);
-		}
-		foreach ($this->tokens['inline'] as $token=>$body) {
-			$body = '<code>' . trim($body) . '</code>';
-			$htmlized = str_replace($token, $body, $htmlized);
-		}
-		return $htmlized;
-	}
-}
+
 function do_list_elements($matches) {
     return '<li>' . $matches[1] . '</li>';
 }
@@ -319,10 +323,5 @@ function do_ordered_lists($matches) {
     	$matches[0]
     )) . '</ol>' . "\n";
 }
-
-function do_headings($matches) {
-    return "<h3>" . trim($matches[1]) . "</h3>";
-}
-
 */
 ?>
