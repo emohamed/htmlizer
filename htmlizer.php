@@ -1,4 +1,4 @@
-<?phpENT_NOQUOTES;
+<?php
 class Htmlizer {
 	public $plain_text, $result_html;
 	
@@ -32,6 +32,7 @@ class Htmlizer {
 		return $return;
 	}
 }
+
 abstract class Htmlizer_Filter {
 	static $classes = array();
 	
@@ -101,7 +102,7 @@ abstract class Htmlizer_Filter {
 			$flags[] = "s"; # dot all 
 		}
 		
-		# escape the regex separator in the regex core -- that wat "~" token won't fail
+		# escape the regex separator in the regex core -- that way "~" token won't fail
 		$this->regex = $regex_separator . 
 				 str_replace($regex_separator, '\\' . $regex_separator, $regex_core) . 
 				 $regex_separator . 
@@ -240,7 +241,7 @@ class Htmlizer_Filter_List extends Htmlizer_Filter {
 	}
 }
 class Htmlizer_Filter_Link extends Htmlizer_Filter {
-	function replace_callback($matches) {
+	function replace_urls($matches) {
 		$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
 		# handle links with parenthese properly
 		$rest = '';
@@ -258,13 +259,25 @@ class Htmlizer_Filter_Link extends Htmlizer_Filter {
 		$link_repr = wordwrap($link_repr, 120, '<wbr></wbr>', 1);
 		return '<a href="' . $link_location . '" target="_blank">' . $link_repr . '</a>' . $rest;
 	}
-	
+	function replace_embed_links($matches) {
+		$link_text = $matches[1];
+		$link_location = $matches[2];
+		return '<a href="' . $link_location . '" target="_blank">' . $link_text . '</a>';
+	}
 	function process($plain_text) {
-		return preg_replace_callback(
-			'~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~',
-			array($this, 'replace_callback'),
+		$return = preg_replace_callback(
+			'~\[([^\]]*?) (.*?)\]~',
+			array($this, 'replace_embed_links'),
 			$plain_text
 		);
+		
+		$return = preg_replace_callback(
+			'~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~',
+			array($this, 'replace_urls'),
+			$return
+		);
+		
+		return $return;
 	}
 }
 
@@ -292,49 +305,4 @@ class Htmlizer_Filter_SubScript extends Htmlizer_Filter_Inline{
 			  $replaced_start = '<sub>', 
 			  $replaced_end = '</sub>';
 }
-
-/*
-function linker($matches) {
-	$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
-	# handle links with parenthese properly
-	$rest = '';
-	if (strpos($link, ')')!==false && strpos($link, '(')===false) {
-		$rest = substr($link, strpos($link, ')'));
-		$link = substr($link, 0, strpos($link, ')'));
-	} else if (preg_match('~([\.",])$~', $link, $m)) {
-		# dots at the end of the string are really not part of the url(in most cases)
-		$link = substr($link, 0, -1);
-		$rest = $m[1];
-	}
-	$link_location = $link;
-	$link_repr = preg_replace('~([%/\?=:])~', '$1<wbr></wbr>', $link);
-	$link_repr = wordwrap($link_repr, 120, '<wbr></wbr>', 1);
-	return '<a href="' . $link_location . '" target="_blank">' . $link_repr . '</a>' . $rest;
-}
-
-function do_quotes($match) {
-    return "<em style='display: block; margin-top: 3px;'>$match[1]</em>";
-}
-function do_horizontal_lines($match) {
-    return "\n" . '<div class="hr">&nbsp;</div>' . "\n";
-}
-
-
-function do_list_elements($matches) {
-    return '<li>' . $matches[1] . '</li>';
-}
-function do_ol_list_elements($matches) {
-    return '<oli>' . $matches[1] . '</oli>';
-}
-function do_unordered_lists($matches) {
-    return '<ul>' . trim($matches[0]) . '</ul>' . "\n";
-}
-function do_ordered_lists($matches) {
-    return '<ol>' . trim(str_replace(
-    	array('<oli>', '</oli>'), 
-    	array('<li>', '</li>'), 
-    	$matches[0]
-    )) . '</ol>' . "\n";
-}
-*/
 ?>

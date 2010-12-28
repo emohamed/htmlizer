@@ -23,8 +23,10 @@ class htmlizer_tester {
 		$htmlizer = new Htmlizer();
 		$actual_output = $htmlizer->htmlize($plain_text);
 		# hack it so the XML parser doesn't complain about missing root element
-		$dom = DomDocument::loadXml("<_root>" . $actual_output . "</_root>");
+		$dom = DomDocument::loadXml("<root>" . $actual_output . "</root>");
 		if (!$dom) {
+			var_dump($plain_text);
+			exit;
 			$this->tests_failed++;
 			$this->error($test_name, $plain_text, $expected_htmlized, $actual_output, "bad HTML");
 			return false;
@@ -111,6 +113,10 @@ $tester->should_match("Link with braces around",
 $tester->should_match("Link with braces in", 
 	"Bison rocks http://en.wikipedia.org/wiki/Bison_(comics)", 
 	"<p>Bison rocks <a href=\"http://en.wikipedia.org/wiki/Bison_(comics)\" target=\"_blank\">http://en.wikipedia.org/wiki/Bison_(comics)</a></p>"
+);
+$tester->should_match("Embed link", 
+	"Bison rocks [Bison http://en.wikipedia.org/wiki/Bison_(comics)]", 
+	"<p>Bison rocks <a href=\"http://en.wikipedia.org/wiki/Bison_(comics)\" target=\"_blank\">Bison</a></p>"
 );
 
 # lists
