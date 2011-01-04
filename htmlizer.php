@@ -13,8 +13,8 @@ class Htmlizer {
 		'super_script',
 		'sub_script',
 		'link',
-		'auto_p',
 		'list',
+		'auto_p',
 		
 		'code_blocks',
 		'inline_code',
@@ -228,19 +228,35 @@ class Htmlizer_Filter_Inline extends Htmlizer_Filter {
 	
 }
 class Htmlizer_Filter_List extends Htmlizer_Filter {
-	function replace_callback($matches) {
-		print_r($matches);
-		exit;
+	function do_list_elements($matches) {
+	    return '<li>' . $matches[1] . '</li>';
 	}
-	function process($plain_text) {
-		return preg_replace_callback(
-			'~(^\s*\*(.*))+~m', 
-			array($this, 'replace_callback'),
-			$plain_text
-		);
+	function do_ol_list_elements($matches) {
+	    return '<oli>' . $matches[1] . '</oli>';
+	}
+	function do_unordered_lists($matches) {
+	    return "\n" . '<ul>' . trim($matches[0]) . '</ul>' . "\n";
+	}
+	function do_ordered_lists($matches) {
+	    return '<ol>' . trim(str_replace(
+	    	array('<oli>', '</oli>'), 
+	    	array('<li>', '</li>'), 
+	    	$matches[0]
+	    )) . '</ol>' . "\n";
+	}
+
+	function process($html) {
+		$html = preg_replace_callback('~\s*^\s*[\-\*•·•] ?(.*?)$~um', array($this, 'do_list_elements'), $html);
+		$html = preg_replace_callback('~(<li>.*?</li>\s*)+~', array($this, 'do_unordered_lists'), $html);
+		
+		$html = preg_replace_callback('~^\s*# ?(.*?)$~um', array($this, 'do_ol_list_elements'), $html);
+		$html = preg_replace_callback('~(<oli>.*?</oli>\s*)+~', array($this, 'do_ordered_lists'), $html);
+
+		return $html;
 	}
 }
 class Htmlizer_Filter_Link extends Htmlizer_Filter {
+	protected $link_regex = '~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~';
 	function replace_urls($matches) {
 		$link = html_entity_decode(str_replace('\\', '/', $matches[0]));
 		# handle links with parenthese properly
@@ -262,22 +278,28 @@ class Htmlizer_Filter_Link extends Htmlizer_Filter {
 	function replace_embed_links($matches) {
 		$link_text = $matches[1];
 		$link_location = $matches[2];
+
+		if (preg_match($this->link_regex, $link_text)) {
+			return $link_text;
+		}
+
 		return '<a href="' . $link_location . '" target="_blank">' . $link_text . '</a>';
 	}
-	function process($plain_text) {
-		$return = preg_replace_callback(
+	function process($html) {
+		/*
+		$html = preg_replace_callback(
 			'~\[([^\]]*?) (.*?)\]~',
 			array($this, 'replace_embed_links'),
-			$plain_text
+			$html
 		);
-		
-		$return = preg_replace_callback(
-			'~((file:|mailto\:|(news|(ht|f)tp(s?))\://){1}[^\*\s"\'\[\]]+)~',
+		*/
+		$html = preg_replace_callback(
+			$this->link_regex,
 			array($this, 'replace_urls'),
-			$return
+			$html
 		);
 		
-		return $return;
+		return $html;
 	}
 }
 

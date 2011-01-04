@@ -15,6 +15,9 @@ $test_string = "test test
  sadasad
  asdas
 ";
+preg_match_all('~((\*+).*?[\n\r]+)+~', $test_string, $matches);
+print_r($matches);
+/*
 function replace_call($m) {
 	print_r($m);
 }
@@ -35,5 +38,5 @@ function replace_lists($plain_text) {
 	// preg_replace_callback(, 'replace_call', $test_string);
 }
 echo replace_lists($test_string);
-
+*/
 ?>

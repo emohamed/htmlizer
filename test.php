@@ -26,6 +26,7 @@ class htmlizer_tester {
 		$dom = DomDocument::loadXml("<root>" . $actual_output . "</root>");
 		if (!$dom) {
 			var_dump($plain_text);
+			var_dump($actual_output);
 			exit;
 			$this->tests_failed++;
 			$this->error($test_name, $plain_text, $expected_htmlized, $actual_output, "bad HTML");
@@ -110,26 +111,38 @@ $tester->should_match("Link with braces around",
 	"test (http://google.com/wave/)", 
 	"<p>test (<a href=\"http://google.com/wave/\" target=\"_blank\">http://google.com/wave/</a>)</p>"
 );
+
 $tester->should_match("Link with braces in", 
 	"Bison rocks http://en.wikipedia.org/wiki/Bison_(comics)", 
 	"<p>Bison rocks <a href=\"http://en.wikipedia.org/wiki/Bison_(comics)\" target=\"_blank\">http://en.wikipedia.org/wiki/Bison_(comics)</a></p>"
 );
+
+/*
 $tester->should_match("Embed link", 
 	"Bison rocks [Bison http://en.wikipedia.org/wiki/Bison_(comics)]", 
 	"<p>Bison rocks <a href=\"http://en.wikipedia.org/wiki/Bison_(comics)\" target=\"_blank\">Bison</a></p>"
 );
-
+*/
 # lists
-$tester->should_match("Link with braces in", 
+$tester->should_match("Basic unordered lists", 
 	"test test\n * test1\n * test2\n * test3", 
-	"<p>test <ul><li>test</li></li>test1</li><li>test2</li><li>test3</li></ul></p>"
+	"<p>test test</p>\n<ul>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ul>"
+);
+$tester->should_match("Basic ordered lists", 
+	"test test\n # test1\n # test2\n # test3", 
+	"<p>test test</p>\n<ol>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ol>"
 );
 
+$tester->should_match("Both lists ordered lists", 
+	"test test\n # test1\n # test2\n # test3\n\n\n* test1\n * test2\n * test3", 
+	"<p>test test</p>\n<ol>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ol>\n<ul>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ul>"
+);
 
-
+$tester->should_match("Bad formatted lists", 
+	"test test\n # test1\n # test2\n # test3\n* test1\n * test2\n * test3", 
+	"<p>test test</p>\n<ol>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ol>\n<ul>\n<li>test1</li>\n<li>test2</li>\n<li>test3</li>\n</ul>"
+);
 // $tester->should_match("Sub Script", "test ~test~ test", "<p>test <sub>test</sub> test</p>");
-
-
 // $tester->test("Code", "test {{{test!}}}", '<p>test <div class="code">test!</div></p>');
 
 echo $tester->get_results();
